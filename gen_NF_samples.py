@@ -35,12 +35,20 @@ print(dev)
 device = torch.device(dev)
 
 #reonstruct an nflow model
-model_path = "models/"
-#model_name = "TM_16_18_20_100_799_-15.19.pt" #For initial double precision studies
-#model_name = "TM_4_6_4_100_3199_-0.88.pt" #4 features with QD
-
-model_name = "TM_16_16_32_400_4399_-14.42.pt" #16 feature with QD
+#model_path = "models/"
+model_path = "models/Cond/16features/"
+#model_name = "TM_16_18_4_400_299_-12.37.pt" #16 feature with Cond
+#model_name = "TM_16_6_80_400_799_-26.48.pt" #16 feature with Cond
+#model_name = "TMUMNN_16_6_80_400_499_-28.70.pt"
+model_name = "TM-UMNN_16_6_80_400_3999_-42.91.pt"
 feature_subset = "all" #All 16 features
+
+
+#model_name = "TM_16_18_20_100_799_-15.19.pt" #For initial double precision studies
+#model_name = "TM_4_6_4_100_3199_-0.88.pt" #4 features with QD, initial training
+
+#model_name = "TM_16_16_32_400_4399_-14.42.pt" #16 feature with QD
+#feature_subset = "all" #All 16 features
 
 #model_name = "TM-Final_4_6_80_400_-1.97.pt" #4 feature (electron) train, done 5/10 at 4 PM
 #feature_subset = [0,1,2,3] #Just electron features
@@ -72,14 +80,16 @@ print("number of params: ", sum(p.numel() for p in flow.parameters()))
 flow.load_state_dict(torch.load(model_path+model_name))
 flow.eval()
 
-maxloops = 200 #Number of overall loops
+maxloops = 500 #Number of overall loops
 max_range = 10#Number of sets per loop
 sample_size = 200 #Number of samples per set
 
 
 #Initialize dataXZ object for quantile inverse transform
 xz = dataXZ.dataXZ(feature_subset=feature_subset)
-QuantTran = xz.qt
+#QuantTran = xz.qt
+
+
 
 for loop_num in range(maxloops):
     try:
@@ -89,8 +99,19 @@ for loop_num in range(maxloops):
         print("Start Time =", start_time)
         for i in range(1,max_range+1):
             print("On set {}".format(i))
-            z0= flow.double().sample(sample_size).cpu().detach().numpy()
-            zs.append(z0)
+            
+            #For nonconditional flows:
+            #val_gen= flow.double().sample(sample_size).cpu().detach().numpy()
+            
+            #For conditional flows:
+            sampleDict = xz.sample(sample_size)
+            z = sampleDict["z"]
+            z = z.detach().numpy()
+            context_val = torch.tensor(z, dtype=torch.float32).to(device)
+            val_gen = flow.sample(1,context=context_val).cpu().detach().numpy().reshape((sample_size,-1))
+
+
+            zs.append(val_gen)
             now = datetime.now()
             elapsedTime = (now - start )
             print("Current time is {}".format(now.strftime("%H:%M:%S")))
@@ -98,10 +119,10 @@ for loop_num in range(maxloops):
             print("Total estimated run time is {}".format(elapsedTime+elapsedTime/i*(max_range+1-i)))
 
         X = np.concatenate(zs)
-        z = QuantTran.inverse_transform(X)
+        #z = QuantTran.inverse_transform(X)
 
-        df = pd.DataFrame(z)
-        df.to_pickle("gendata/16features/GenData_{}_{}_{}_{}_{}_set_4{}.pkl".format(num_features,
+        df = pd.DataFrame(X)
+        df.to_pickle("gendata/Cond/16features/UMNN/GenData_UMNN_{}_{}_{}_{}_{}_set_2_{}.pkl".format(num_features,
                 num_layers,num_hidden_features,training_sample_size,training_loss,loop_num))
     except Exception as e:
         print("sorry, that didn't work, exception was:")
